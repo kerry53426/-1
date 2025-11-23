@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>愛上喜翁 - 尊榮會員管家</title>
+    <script>
+      // Polyfill process to prevent "process is not defined" crashes in browser
+      window.process = { env: { NODE_ENV: 'production' } };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              glamping: {
+                50: '#f7f7f5', // Stone/Paper
+                100: '#e8e8e3',
+                200: '#d3d3cb',
+                300: '#b4b4a6',
+                400: '#949483',
+                500: '#787866', // Earthy Olive
+                600: '#5e5e4f',
+                700: '#4b4b3f',
+                800: '#3f3f36', // Deep Moss
+                900: '#36362e',
+              },
+              luxury: {
+                gold: '#C5A059',
+                accent: '#9B2C2C' // Muted Red for alerts
+              }
+            },
+            fontFamily: {
+              serif: ['"Noto Serif TC"', 'serif'],
+              sans: ['"Noto Sans TC"', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #f7f7f5;
+        color: #3f3f36;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
