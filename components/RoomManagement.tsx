@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Room, RoomStatus, RoomType, BookingRecord } from '../types';
-import { BedDouble, Droplets, Home, Tent, TreePine, Brush, CheckCircle, User, AlertCircle, ArrowRightLeft, LogOut, X, ArrowRight, ThermometerSnowflake, Wrench, Zap, Package, Search, Warehouse, Crown, ChevronDown, ChevronUp, Settings2, Layers, CheckSquare, Save, AlertTriangle, FileInput, Camera, Calendar, StickyNote, Filter } from 'lucide-react';
+import { BedDouble, Droplets, Home, Tent, TreePine, Brush, CheckCircle, User, AlertCircle, ArrowRightLeft, LogOut, X, ArrowRight, ThermometerSnowflake, Wrench, Zap, Package, Search, Warehouse, Crown, ChevronDown, ChevronUp, Settings2, Layers, CheckSquare, Save, AlertTriangle, FileInput, Camera, Calendar, StickyNote, Filter, Trash2 } from 'lucide-react';
 import OccupancyImportModal, { ParsedBooking } from './OccupancyImportModal';
 
 interface RoomManagementProps {
@@ -455,7 +455,7 @@ const RoomManagement: React.FC<RoomManagementProps> = ({
                 <div key={room.id} onClick={() => handleRoomClick(room)} className={`relative p-4 rounded-xl border transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md group flex flex-col justify-between min-h-[140px] ${room.status === RoomStatus.OCCUPIED ? 'bg-white border-luxury-gold ring-1 ring-luxury-gold/20' : room.status === RoomStatus.DIRTY ? 'bg-red-50 border-red-200' : room.status === RoomStatus.AWAITING_STRIP ? 'bg-purple-50 border-purple-200' : room.status === RoomStatus.MAINTENANCE ? 'bg-gray-100 border-gray-300' : 'bg-white border-glamping-200 hover:border-glamping-400'}`}>
                     {/* Note Indicator */}
                     {room.notes && (
-                      <div className="absolute top-2 right-2 text-yellow-500 animate-bounce">
+                      <div className="absolute top-2 right-2 text-yellow-500 animate-bounce" title={room.notes}>
                          <StickyNote size={16} fill="#F59E0B" className="text-yellow-600" />
                       </div>
                     )}
@@ -472,14 +472,30 @@ const RoomManagement: React.FC<RoomManagementProps> = ({
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in max-h-[90vh] overflow-y-auto">
                 <div className={`p-6 text-white flex justify-between items-start ${selectedRoom.status === RoomStatus.OCCUPIED ? 'bg-luxury-gold' : selectedRoom.status === RoomStatus.DIRTY ? 'bg-red-500' : selectedRoom.status === RoomStatus.AWAITING_STRIP ? 'bg-purple-600' : 'bg-glamping-800'}`}><div><div className="flex items-center gap-2 mb-1 opacity-90 text-sm font-medium">{getRoomIcon(selectedRoom.type)}{selectedRoom.type}</div><h2 className="text-3xl font-serif font-bold flex items-center gap-3">{selectedRoom.code} <span className="text-base font-sans font-normal bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm border border-white/30">{selectedRoom.status}</span></h2></div><button onClick={closeModal} className="text-white/70 hover:text-white transition-colors bg-white/10 p-1 rounded-full hover:bg-white/20"><X size={24} /></button></div>
                 <div className="p-6 space-y-6">
-                    {/* Notes Section - Always Visible */}
-                    <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-100 relative">
-                        <label className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                            <StickyNote size={14}/> 特殊需求 / 備註
-                        </label>
+                    {/* Notes Section - Modified with Clear Button */}
+                    <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-100 relative shadow-inner">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-xs font-bold text-yellow-700 uppercase tracking-wider flex items-center gap-1">
+                                <StickyNote size={14}/> 特殊需求 / 備註
+                            </label>
+                            {modalNotes && (
+                                <button 
+                                    onClick={() => {
+                                        if (window.confirm('確定事項已處理完畢，並清除此備註？')) {
+                                            setModalNotes('');
+                                            if (selectedRoomId) onUpdateRoomNotes(selectedRoomId, '');
+                                        }
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 bg-white border border-yellow-300 text-yellow-700 rounded text-[10px] font-bold shadow-sm hover:bg-yellow-100 hover:text-yellow-900 transition-colors"
+                                >
+                                    <CheckSquare size={12} />
+                                    已處理 (清除)
+                                </button>
+                            )}
+                        </div>
                         <textarea 
                             className="w-full bg-white border border-yellow-200 rounded p-2 text-sm text-glamping-800 focus:outline-none focus:border-yellow-400 min-h-[60px]"
-                            placeholder="例如：加兩顆枕頭、需要嬰兒澡盆..."
+                            placeholder="例如：加兩顆枕頭、紗窗破損..."
                             value={modalNotes}
                             onChange={(e) => setModalNotes(e.target.value)}
                             onBlur={handleSaveNotes}

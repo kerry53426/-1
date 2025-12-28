@@ -60,7 +60,7 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
     if (room.notes && room.notes.trim().length > 0) {
         // Truncate long notes for display
         const shortNote = room.notes.length > 10 ? room.notes.substring(0, 10) + '...' : room.notes;
-        warnings.push(`📝 舊備註: ${shortNote}`);
+        warnings.push(`📝 維修備註: ${shortNote}`);
     }
 
     return warnings.length > 0 ? warnings.join(' | ') : undefined;
@@ -82,6 +82,12 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
         let extraGuests = 0;
         let warning = undefined;
 
+        // Special handling for stay duration detected by AI (e.g. 2泊)
+        // We move this to WARNING so it doesn't pollute the 'notes' field (reserved for maintenance)
+        const detectedDurationInfo = item.notes && (item.notes.includes('泊') || item.notes.includes('天') || item.notes.includes('續')) 
+            ? `ℹ️ 報表註記: ${item.notes}` 
+            : undefined;
+
         if (room) {
            status = room.status === RoomStatus.OCCUPIED ? 'CONFLICT' : 'MATCHED';
            targetId = room.id;
@@ -89,7 +95,12 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
            baseCapacity = getBaseCapacity(room.type);
            const totalPeople = (item.adults || 0) + (item.children || 0);
            extraGuests = Math.max(0, Math.min(2, totalPeople - baseCapacity));
-           warning = generateWarning(room);
+           
+           const roomWarning = generateWarning(room);
+           // Combine existing room warnings with AI duration detection
+           warning = [roomWarning, detectedDurationInfo].filter(Boolean).join(' | ');
+        } else if (detectedDurationInfo) {
+           warning = detectedDurationInfo;
         }
 
         return {
@@ -102,7 +113,8 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
           adults: item.adults || 0,
           children: item.children || 0,
           extraGuests,
-          notes: item.notes || '',
+          // CRITICAL: Always set notes to empty string to prevent overwriting room maintenance notes
+          notes: '', 
           status,
           warning
         };
@@ -163,7 +175,7 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
                       <div className="text-[10px] text-glamping-400 px-1">預計退房: {expectedCheckOutStr}</div>
                    </div>
                    <div className="flex-1 space-y-4">
-                      <div className="bg-amber-50 border border-amber-100 p-4 rounded-lg text-amber-900 text-sm"><h4 className="font-bold flex items-center gap-2 mb-2"><AlertCircle size={16}/> AI 分析說明</h4><p>系統將自動識別圖片中的表格，並嘗試配對房號。</p><p className="mt-1 text-xs opacity-80"><strong>人數辨識：</strong>支援「2大1小」、「3+1」等格式。<br/><strong>日期邏輯：</strong>將根據左側設定的「報表日期」與「天數」自動計算退房日與備餐量。</p></div>
+                      <div className="bg-amber-50 border border-amber-100 p-4 rounded-lg text-amber-900 text-sm"><h4 className="font-bold flex items-center gap-2 mb-2"><AlertCircle size={16}/> AI 分析說明</h4><p>系統將自動識別圖片中的表格，並嘗試配對房號。</p><p className="mt-1 text-xs opacity-80"><strong>人數辨識：</strong>支援「2大1小」、「3+1」等格式。<br/><strong>備註過濾：</strong>為避免覆蓋房務維修紀錄，報表上的特殊需求(如不吃牛)將不會匯入備註欄。</p></div>
                       {parsedData.length === 0 && (<button onClick={handleAnalyze} disabled={isAnalyzing} className="w-full py-3 bg-glamping-800 text-white font-bold rounded-lg hover:bg-glamping-900 transition flex items-center justify-center gap-2 shadow-md disabled:opacity-50">{isAnalyzing ? <><Loader size={18} className="animate-spin"/> 正在解讀報表...</> : <><FileImage size={18}/> 開始分析</>}</button>)}
                    </div>
                 </div>
@@ -199,7 +211,8 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
                                         {row.status !== 'NOT_FOUND' && totalGuests > row.baseCapacity && <span className="text-[10px] font-bold text-luxury-gold bg-luxury-gold/10 px-1.5 rounded">+{row.extraGuests} 加人</span>}
                                         <div className="text-[10px] text-glamping-400 mt-0.5">({row.guestName})</div>
                                      </td>
-                                     <td className="p-3 text-xs text-glamping-500 max-w-[150px] truncate">{row.notes}</td>
+                                     {/* Notes is now explicitly empty in logic, so this will be empty */}
+                                     <td className="p-3 text-xs text-glamping-300 italic">{row.notes || '(不匯入)'}</td>
                                      <td className="p-3 text-xs font-bold text-red-600 max-w-[200px] whitespace-normal">
                                         {row.status === 'CONFLICT' && <div>⛔ 房間入住中，匯入將覆蓋！</div>}
                                         {row.warning && <div>{row.warning}</div>}
