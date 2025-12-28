@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, Blob } from "@google/genai";
 import { Mic, MicOff, Loader, X, Sparkles } from 'lucide-react';
@@ -157,13 +156,8 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onRoomAction, onGetStat
     try {
       setIsConnecting(true);
       
-      let apiKey = '';
-      if (typeof process !== 'undefined' && process.env) {
-        apiKey = process.env.API_KEY || '';
-      }
-      if (!apiKey) throw new Error("API Key not found");
-
-      const ai = new GoogleGenAI({ apiKey });
+      // Correct initialization using process.env.API_KEY directly as per Google GenAI SDK guidelines
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       const inputCtx = new AudioContextClass({ sampleRate: 16000 });

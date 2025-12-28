@@ -1,30 +1,8 @@
-
-import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Member, MembershipTier, AIAnalysisResult, DailyStats } from "../types";
-
-// ============================================================================
-// 👇👇👇 請將您的 API Key 直接貼在下方的雙引號中 👇👇👇
-const HARDCODED_API_KEY = "AIzaSyAZqBjveTcYrefMo4dopnekpKjv1kWHgsE"; 
-// ============================================================================
-
-// Helper to safely initialize Gemini API only when needed
-const getAI = () => {
-  // 優先順序：
-  // 1. 程式碼中直接填寫的 Key (方便快速測試/部署)
-  // 2. 環境變數 process.env.API_KEY (Vercel 設定)
-  const apiKey = HARDCODED_API_KEY || process.env.API_KEY;
-
-  if (!apiKey) {
-    console.error("CRITICAL: API_KEY is missing. Please check services/geminiService.ts or Environment Variables.");
-    // 這裡不拋出錯誤，讓它回傳一個空的實例，雖然呼叫會失敗，但至少不會在初始化時 crash
-  }
-  
-  return new GoogleGenAI({ apiKey: apiKey || "" });
-};
+import { GoogleGenAI, Type } from "@google/genai";
+import { Member, AIAnalysisResult, DailyStats } from "../types";
 
 /**
- * Analyzes unstructured staff notes to extract structured preferences,
- * dietary restrictions, and suggested tags.
+ * 分析會員筆記，提取結構化資訊
  */
 export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResult> => {
   if (!notes.trim()) {
@@ -37,48 +15,47 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
     };
   }
 
-  const responseSchema: Schema = {
+  const responseSchema = {
     type: Type.OBJECT,
     properties: {
       dietaryRestrictions: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "List of dietary restrictions or allergies found in the text (e.g., 'No Peanuts', 'Vegetarian')."
+        description: "飲食禁忌清單"
       },
       specialRequests: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "Specific logistical or service requests mentioned (e.g., 'Late checkout', 'Extra pillows', 'Baby cot', 'Airport pickup')."
+        description: "特殊服務需求"
       },
       tags: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "Categorization tags for the member (e.g., 'Family', 'Anniversary', 'Wine Lover', 'High Spender')."
+        description: "分類標籤"
       },
       summary: {
         type: Type.STRING,
-        description: "A concise, professional summary of the member's preferences and style."
+        description: "專業摘要"
       },
       suggestedActions: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "3 suggested actions for staff to prepare for the next visit (e.g., 'Prepare vegan menu', 'Arrange birthday cake')."
+        description: "建議行動"
       }
     },
     required: ["dietaryRestrictions", "specialRequests", "tags", "summary", "suggestedActions"]
   };
 
   try {
-    const ai = getAI();
+    // Correct initialization using process.env.API_KEY directly
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Analyze the following customer notes for a luxury glamping site. Extract key information into JSON format.
-      
-      Notes: "${notes}"`,
+      model: "gemini-3-flash-preview",
+      contents: `分析以下豪華露營客戶筆記： "${notes}"`,
       config: {
         responseMimeType: "application/json",
         responseSchema: responseSchema,
-        systemInstruction: "You are an expert concierge at a luxury glamping resort in Taiwan. Analyze customer notes to help staff provide perfect service. Return Chinese (Traditional) text for values."
+        systemInstruction: "你是一位頂級管家，負責整理客戶資料。請使用繁體中文。"
       }
     });
 
@@ -86,91 +63,83 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
     if (text) {
       return JSON.parse(text) as AIAnalysisResult;
     }
-    throw new Error("No text returned from Gemini");
+    throw new Error("AI 未回傳內容");
   } catch (error) {
     console.error("Gemini Analysis Failed:", error);
     return {
       dietaryRestrictions: [],
       specialRequests: [],
-      tags: ["AI分析失敗"],
-      summary: "無法連接至 AI 服務，請確認 API Key 是否正確。",
+      tags: ["分析失敗"],
+      summary: "無法連接至 AI 服務，請確認後台 API 設定。",
       suggestedActions: []
     };
   }
 };
 
 /**
- * Generates a personalized welcome email/message for a member.
+ * 產生迎賓訊息
  */
 export const generateWelcomeMessage = async (member: Member): Promise<string> => {
   try {
-    const ai = getAI();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Write a warm, luxurious, and personalized welcome back message (or new member welcome) for: ${JSON.stringify({
-        name: member.name,
-        tier: member.tier,
-        visits: member.totalVisits,
-        preferences: member.preferences,
-        lastVisit: member.history.length > 0 ? member.history[0].date : "N/A"
-      })}`,
+      model: "gemini-3-flash-preview",
+      contents: `為會員 ${member.name} 寫一段溫暖的迎賓詞。`,
       config: {
-        systemInstruction: "You are the General Manager of 'Ai Shang Xi Weng' (愛上喜翁), a top-tier luxury glamping site in Taiwan. Write in Traditional Chinese. The tone should be elegant, poetic (referencing nature, mountains, clouds), and very polite. Keep it under 150 words."
+        systemInstruction: "你是愛上喜翁的總管。語氣要優雅且富有詩意。請使用繁體中文。"
       }
     });
     return response.text || "歡迎回到愛上喜翁。";
   } catch (error) {
-    console.error("Gemini Message Gen Failed:", error);
-    return `親愛的 ${member.name} 您好，歡迎回到愛上喜翁。我們期待為您提供最尊榮的服務。`;
+    return `親愛的 ${member.name} 您好，歡迎回到愛上喜翁。`;
   }
 };
 
 /**
- * Generates a daily operational briefing for the owner.
+ * 產生每日營運簡報
  */
 export const generateDailyBriefing = async (stats: DailyStats | null, upcomingVIPs: string[]): Promise<string> => {
-  if (!stats) {
-    return "今日數據尚未生成，請稍後。";
-  }
+  if (!stats) return "數據不足。";
   try {
-    const ai = getAI();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Generate a morning briefing for the owner based on today's stats: ${JSON.stringify(stats)} and upcoming VIPs: ${upcomingVIPs.join(', ')}.`,
+      model: "gemini-3-flash-preview",
+      contents: `根據數據生成營運簡報： ${JSON.stringify(stats)}`,
       config: {
-        systemInstruction: "You are the AI Operations Director for a luxury glamping site. Provide a concise, 3-bullet point morning briefing in Traditional Chinese. 1. Highlight occupancy/revenue status. 2. Mention VIPs arriving. 3. Give one operational advice (e.g. weather related or service focus). Tone: Professional, Concise, Executive."
+        systemInstruction: "你是營運總監，提供 3 個精簡的觀察重點。請使用繁體中文。"
       }
     });
-    return response.text || "系統連線中，請稍後查看簡報。";
+    return response.text || "今日營運正常。";
   } catch (error) {
-    return "今日營運數據正常，請注意山區午後雷陣雨。";
+    return "今日營運數據正常，請注意山區天氣。";
   }
 };
 
 /**
- * Analyzes an image of a booking sheet/table and extracts structured booking data.
+ * 核心功能：分析訂房報表圖片
  */
 export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]> => {
   try {
-    const responseSchema: Schema = {
+    const responseSchema = {
       type: Type.ARRAY,
       items: {
         type: Type.OBJECT,
         properties: {
-          roomCode: { type: Type.STRING, description: "房號 (e.g., '12', '尊2', '201')" },
-          guestName: { type: Type.STRING, description: "入住人姓名" },
-          checkInDate: { type: Type.STRING, description: "入住日期 (Format: YYYY-MM-DD)" },
-          adults: { type: Type.INTEGER, description: "大人人數 (Adults). STRICTLY PARSE NUMBERS. '2大1小' -> 2." },
-          children: { type: Type.INTEGER, description: "小孩人數 (Children). STRICTLY PARSE NUMBERS. '2大1小' -> 1." },
-          notes: { type: Type.STRING, description: "續住/特殊天數標記 (e.g. '2泊'). 若無特殊天數，請留空。" }
+          roomCode: { type: Type.STRING, description: "房號" },
+          guestName: { type: Type.STRING, description: "房客姓名" },
+          checkInDate: { type: Type.STRING, description: "入住日期 (YYYY-MM-DD)" },
+          adults: { type: Type.INTEGER, description: "大人人數" },
+          children: { type: Type.INTEGER, description: "小孩人數" },
+          stayDurationInfo: { type: Type.STRING, description: "天數資訊，如 '2泊', '續住'。若無則留空。" }
         },
         required: ["roomCode", "guestName", "checkInDate", "adults", "children"]
       }
     };
 
-    const ai = getAI();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // Use gemini-3-flash-preview for general task processing with vision capabilities
+      model: "gemini-3-flash-preview",
       contents: [
         {
           inlineData: {
@@ -179,28 +148,12 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
           }
         },
         {
-          text: `You are a professional data entry specialist. Analyze this Glamping Booking Sheet image.
+          text: `你是一位專業的資料錄入員。請分析這張訂房報表：
           
-          **CRITICAL TASK 1: NUMBER RECOGNITION (人數辨識)**
-          You must correctly extract the number of Adults and Children.
-          - "2大1小" => adults: 2, children: 1
-          - "2+1" => adults: 2, children: 1
-          - "2" => adults: 2, children: 0
-          
-          **CRITICAL TASK 2: IGNORE DIETARY RESTRICTIONS IN NOTES**
-          - The user uses the 'notes' field ONLY for room maintenance issues.
-          - **DO NOT** extract "No Beef", "Vegetarian", "Spicy" etc. into the notes field.
-          
-          **CRITICAL TASK 3: DETECT STAY DURATION (續住)**
-          - If you see **"2泊"**, **"3天2夜"**, **"續住"**, **"連住"**, please output exactly that string into the 'notes' field so the system can warn the user.
-          - If it is a normal 1 night stay, leave 'notes' EMPTY.
-          
-          **Other Fields:**
-          - **Room Code (房號)**: Look for '房號', 'No.'. Convert chinese numerals (尊一 -> 尊1).
-          - **Guest Name**: Extract main contact name.
-          - **Date**: Extract check-in date.
-
-          Return a JSON Array.`
+          1. **精準辨識房號**：如 201, 尊1 等。
+          2. **入住天數（重要）**：特別留意備註欄或天數欄。若看到 '2泊', '3天2夜', '續住'，請務必填入 stayDurationInfo。
+          3. **忽略飲食禁忌**：不要提取任何關於食物的要求。
+          4. **格式規範**：嚴格遵守 JSON Array 格式。`
         }
       ],
       config: {
@@ -214,46 +167,32 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
       return JSON.parse(text);
     }
     return [];
-  } catch (error) {
-    console.error("Image Analysis Failed:", error);
-    // Throwing error allows the UI to catch it and show an alert
-    throw new Error("圖片分析失敗。請確認：1. 是否已在 geminiService.ts 填寫 HARDCODED_API_KEY。 2. 圖片是否清晰。");
+  } catch (error: any) {
+    console.error("Gemini Image Analysis Error:", error);
+    // 根據錯誤訊息提供引導
+    let errorMsg = "分析失敗。";
+    if (error.message?.includes("API_KEY")) errorMsg = "API Key 設定錯誤，請聯繫技術人員檢查環境變數。";
+    else if (error.message?.includes("fetch")) errorMsg = "網路連線中斷，請稍後再試。";
+    
+    throw new Error(errorMsg);
   }
 };
 
 /**
- * Generates kitchen advice based on meal stats and dining list.
+ * 廚房備料建議
  */
 export const generateKitchenAdvice = async (date: string, mealStats: any, diningList: any[]): Promise<string> => {
   try {
-    const ai = getAI();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `擔任豪華露營區的行政主廚。請根據以下數據生成今日廚房備料建議與注意事項。
-      
-      日期: ${date}
-      
-      餐點統計 (Meal Stats):
-      ${JSON.stringify(mealStats, null, 2)}
-      
-      用餐名單 (Guest List):
-      ${JSON.stringify(diningList, null, 2)}
-      
-      請提供給內場人員的簡報，包含：
-      1. 總餐量摘要 (早餐/晚餐)
-      2. 特殊飲食需求總整理 (過敏、素食細節)
-      3. 菜盤備料重點 (葷食/海鮮/素食 的 雙人/三人盤數量)
-      4. 針對個別客人的注意事項 (如：某房不吃蔥、某房慶生需蛋糕等)
-      
-      語氣專業、精簡、條列式。請用繁體中文。`,
+      model: "gemini-3-flash-preview",
+      contents: `今日日期: ${date}, 統計: ${JSON.stringify(mealStats)}`,
       config: {
-        systemInstruction: "You are an expert Executive Chef at a luxury glamping resort in Taiwan. Provide concise, operational kitchen advice."
+        systemInstruction: "你是行政主廚，提供專業的備料建議。請使用繁體中文。"
       }
     });
-
-    return response.text || "目前無法產生建議。";
+    return response.text || "請參考統計數據進行備料。";
   } catch (error) {
-    console.error("Gemini Kitchen Advice Failed:", error);
-    return "連線問題，無法產生 AI 建議，請直接參考統計數據。";
+    return "連線問題，請直接參考統計數據。";
   }
 };
