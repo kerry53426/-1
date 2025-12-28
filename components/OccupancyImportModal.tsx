@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Camera, Upload, X, Check, AlertCircle, Loader, FileImage, Edit2, ArrowRight, Calendar, Clock, AlertTriangle } from 'lucide-react';
 import { Room, RoomStatus, RoomType } from '../types';
@@ -214,7 +215,6 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
                               </td>
                               <td className="p-3">
                                 <div onClick={() => setEditingIndex(idx)} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 px-2 py-1 rounded">
-                                  {/* Fix: use editingIndex directly instead of non-existent isEditing to resolve line 218 error */}
                                   {editingIndex === idx ? (
                                     <select autoFocus onBlur={() => setEditingIndex(null)} onChange={(e) => handleManualMap(idx, e.target.value)} className="border rounded text-xs">
                                       <option value="">選擇房號...</option>

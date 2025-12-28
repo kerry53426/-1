@@ -1,5 +1,10 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Member, AIAnalysisResult, DailyStats } from "../types";
+
+// 為了確保您部署後能直接使用，這裡設定了您的 API Key
+// 優先讀取環境變數，若無則使用預設金鑰
+const API_KEY = process.env.API_KEY || "AIzaSyAZqBjveTcYrefMo4dopnekpKjv1kWHgsE";
 
 /**
  * 分析會員筆記，提取結構化資訊
@@ -47,8 +52,7 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
   };
 
   try {
-    // Correct initialization using process.env.API_KEY directly
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `分析以下豪華露營客戶筆記： "${notes}"`,
@@ -70,7 +74,7 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
       dietaryRestrictions: [],
       specialRequests: [],
       tags: ["分析失敗"],
-      summary: "無法連接至 AI 服務，請確認後台 API 設定。",
+      summary: "無法連接至 AI 服務，請確認網路連線。",
       suggestedActions: []
     };
   }
@@ -81,7 +85,7 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
  */
 export const generateWelcomeMessage = async (member: Member): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `為會員 ${member.name} 寫一段溫暖的迎賓詞。`,
@@ -101,7 +105,7 @@ export const generateWelcomeMessage = async (member: Member): Promise<string> =>
 export const generateDailyBriefing = async (stats: DailyStats | null, upcomingVIPs: string[]): Promise<string> => {
   if (!stats) return "數據不足。";
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `根據數據生成營運簡報： ${JSON.stringify(stats)}`,
@@ -136,10 +140,9 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
       }
     };
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
-      // Use gemini-3-flash-preview for general task processing with vision capabilities
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash", // Use 2.5 flash for reliable vision
       contents: [
         {
           inlineData: {
@@ -169,9 +172,8 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
     return [];
   } catch (error: any) {
     console.error("Gemini Image Analysis Error:", error);
-    // 根據錯誤訊息提供引導
     let errorMsg = "分析失敗。";
-    if (error.message?.includes("API_KEY")) errorMsg = "API Key 設定錯誤，請聯繫技術人員檢查環境變數。";
+    if (error.message?.includes("API_KEY")) errorMsg = "API Key 無效。";
     else if (error.message?.includes("fetch")) errorMsg = "網路連線中斷，請稍後再試。";
     
     throw new Error(errorMsg);
@@ -183,7 +185,7 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
  */
 export const generateKitchenAdvice = async (date: string, mealStats: any, diningList: any[]): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `今日日期: ${date}, 統計: ${JSON.stringify(mealStats)}`,
