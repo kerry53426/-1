@@ -2,9 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Member, AIAnalysisResult, DailyStats } from "../types";
 
-// 為了確保您部署後能直接使用，這裡設定了您的 API Key
-// 優先讀取環境變數，若無則使用預設金鑰
-const API_KEY = process.env.API_KEY || "AIzaSyAZqBjveTcYrefMo4dopnekpKjv1kWHgsE";
+// 老闆，這是您提供的專屬金鑰，直接寫入確保 Vercel 部署後一定讀得到
+const API_KEY = "AIzaSyAZqBjveTcYrefMo4dopnekpKjv1kWHgsE";
 
 /**
  * 分析會員筆記，提取結構化資訊
@@ -121,8 +120,9 @@ export const generateDailyBriefing = async (stats: DailyStats | null, upcomingVI
 
 /**
  * 核心功能：分析訂房報表圖片
+ * Updated to accept mimeType dynamiclly
  */
-export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]> => {
+export const analyzeOccupancyImage = async (base64Image: string, mimeType: string = "image/jpeg"): Promise<any[]> => {
   try {
     const responseSchema = {
       type: Type.ARRAY,
@@ -142,11 +142,11 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
 
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", // Use 2.5 flash for reliable vision
+      model: "gemini-3-flash-preview", // Use 3-flash for best multimodal performance
       contents: [
         {
           inlineData: {
-            mimeType: "image/jpeg",
+            mimeType: mimeType, // Use correct mime type passed from file input
             data: base64Image
           }
         },
@@ -172,9 +172,18 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
     return [];
   } catch (error: any) {
     console.error("Gemini Image Analysis Error:", error);
-    let errorMsg = "分析失敗。";
-    if (error.message?.includes("API_KEY")) errorMsg = "API Key 無效。";
-    else if (error.message?.includes("fetch")) errorMsg = "網路連線中斷，請稍後再試。";
+    let errorMsg = "分析失敗，請重試。";
+    
+    // Provide more specific error messages
+    if (error.message?.includes("API_KEY") || error.status === 400 || error.status === 403) {
+        errorMsg = "API Key 權限不足或無效，請確認 Google AI Studio 設定。";
+    } else if (error.message?.includes("fetch") || error.message?.includes("network")) {
+        errorMsg = "網路連線異常，無法連接至 Google AI。";
+    } else if (error.status === 503) {
+        errorMsg = "AI 服務暫時繁忙，請稍後再試。";
+    } else {
+        errorMsg = `分析錯誤: ${error.message}`;
+    }
     
     throw new Error(errorMsg);
   }

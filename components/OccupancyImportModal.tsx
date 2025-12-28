@@ -61,9 +61,14 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
     if (!selectedImage) return;
     setIsAnalyzing(true);
     setParsedData([]);
+    
     try {
-      const base64Data = selectedImage.split(',')[1];
-      const rawData = await analyzeOccupancyImage(base64Data);
+      // Extract MIME type and Base64 data correctly
+      // Format: "data:image/png;base64,iVBORw0KGgo..."
+      const [header, base64Data] = selectedImage.split(',');
+      const mimeType = header.split(':')[1].split(';')[0]; // e.g., "image/png" or "image/jpeg"
+
+      const rawData = await analyzeOccupancyImage(base64Data, mimeType);
       
       const processed: ParsedBooking[] = rawData.map((item: any) => {
         const room = rooms.find(r => r.code === item.roomCode);
@@ -103,7 +108,7 @@ const OccupancyImportModal: React.FC<OccupancyImportModalProps> = ({ rooms, onCl
       });
       setParsedData(processed);
     } catch (error: any) {
-      alert(error.message || "分析失敗，請確認圖片是否清晰或 API 設定是否正確。");
+      alert(`分析中斷：${error.message}`);
     } finally {
       setIsAnalyzing(false);
     }
