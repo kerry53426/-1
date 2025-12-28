@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-TW">
   <head>
@@ -5,8 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>愛上喜翁 - 尊榮會員管家</title>
     <script>
-      // Polyfill process to prevent "process is not defined" crashes in browser
-      window.process = { env: { NODE_ENV: 'production' } };
+      // Safer Polyfill: Only create if not exists, or merge.
+      // This prevents overwriting 'process.env' if the build tool injected it.
+      window.process = window.process || {};
+      window.process.env = window.process.env || {};
+      if (!window.process.env.NODE_ENV) {
+         window.process.env.NODE_ENV = 'production';
+      }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">

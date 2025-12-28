@@ -14,17 +14,16 @@ export interface GlampingData {
 
 export const fetchGlampingData = async (): Promise<GlampingData | null> => {
   try {
+    // 移除逾時限制，持續等待直到資料庫回應
     const response = await fetch(BASE_URL, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-      cache: 'no-store' // Ensure we get fresh data
+      cache: 'no-store', // Ensure we get fresh data
     });
 
     if (!response.ok) {
-      // If 404, it means the basket hasn't been created yet.
-      // Return null so the app initializes default data.
       if (response.status === 404) {
         console.warn("Pantry basket not found, initializing new data.");
         return null;
@@ -34,7 +33,7 @@ export const fetchGlampingData = async (): Promise<GlampingData | null> => {
 
     const data = await response.json();
     return data as GlampingData;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Failed to fetch data from Pantry:", error);
     // Return null to trigger default data generation instead of crashing
     return null;

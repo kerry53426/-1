@@ -1,18 +1,25 @@
+
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Member, MembershipTier, AIAnalysisResult, DailyStats } from "../types";
 
+// ============================================================================
+// 👇👇👇 請將您的 API Key 直接貼在下方的雙引號中 👇👇👇
+const HARDCODED_API_KEY = "AIzaSyAZqBjveTcYrefMo4dopnekpKjv1kWHgsE"; 
+// ============================================================================
+
 // Helper to safely initialize Gemini API only when needed
-// This prevents "ReferenceError: process is not defined" from crashing the app on load
 const getAI = () => {
-  let apiKey = '';
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      apiKey = process.env.API_KEY || '';
-    }
-  } catch (e) {
-    console.warn("Failed to read process.env.API_KEY");
+  // 優先順序：
+  // 1. 程式碼中直接填寫的 Key (方便快速測試/部署)
+  // 2. 環境變數 process.env.API_KEY (Vercel 設定)
+  const apiKey = HARDCODED_API_KEY || process.env.API_KEY;
+
+  if (!apiKey) {
+    console.error("CRITICAL: API_KEY is missing. Please check services/geminiService.ts or Environment Variables.");
+    // 這裡不拋出錯誤，讓它回傳一個空的實例，雖然呼叫會失敗，但至少不會在初始化時 crash
   }
-  return new GoogleGenAI({ apiKey });
+  
+  return new GoogleGenAI({ apiKey: apiKey || "" });
 };
 
 /**
@@ -86,7 +93,7 @@ export const analyzeMemberNotes = async (notes: string): Promise<AIAnalysisResul
       dietaryRestrictions: [],
       specialRequests: [],
       tags: ["AI分析失敗"],
-      summary: "無法連接至 AI 服務，請稍後再試。",
+      summary: "無法連接至 AI 服務，請確認 API Key 是否正確。",
       suggestedActions: []
     };
   }
@@ -153,9 +160,9 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
           roomCode: { type: Type.STRING, description: "房號 (e.g., '12', '尊2', '201')" },
           guestName: { type: Type.STRING, description: "入住人姓名" },
           checkInDate: { type: Type.STRING, description: "入住日期 (Format: YYYY-MM-DD)" },
-          adults: { type: Type.INTEGER, description: "大人人數 (Adults). If text is '2大1小', value is 2." },
-          children: { type: Type.INTEGER, description: "小孩人數 (Children). If text is '2大1小', value is 1." },
-          notes: { type: Type.STRING, description: "備註/特殊需求 (e.g., '不吃牛', '加被子', '全素')" }
+          adults: { type: Type.INTEGER, description: "大人人數 (Adults). STRICTLY PARSE NUMBERS. '2大1小' -> 2." },
+          children: { type: Type.INTEGER, description: "小孩人數 (Children). STRICTLY PARSE NUMBERS. '2大1小' -> 1." },
+          notes: { type: Type.STRING, description: "備註 (e.g., '不吃牛', '加被子', '全素')" }
         },
         required: ["roomCode", "guestName", "checkInDate", "adults", "children"]
       }
@@ -172,17 +179,26 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
           }
         },
         {
-          text: `擔任專業的訂房報表數據輸入員。分析這張台灣豪華露營的訂房報表圖片。
+          text: `You are a professional data entry specialist. Analyze this Glamping Booking Sheet image.
           
-          重點規則：
-          1. **房號配對**：請辨識 '房號' 欄位。
-          2. **人數拆解**：
-             - 欄位可能分開為 '大人'/'小孩'。
-             - 也可能合併在 '人數' 或 '備註'，例如 "2大1小" (2 Adults, 1 Child), "3+1" (3 Adults, 1 Child), "4位" (4 Adults, 0 Children).
-             - 請務必精確拆解數字。
-          3. **備註提取**：將飲食禁忌(不吃牛、素食)、壽星、加床等需求放入 notes。
+          **CRITICAL TASK: NUMBER RECOGNITION (人數辨識)**
+          You must correctly extract the number of Adults and Children from the columns (usually labeled '人數', '大人/小孩', or '備註').
           
-          請回傳純 JSON 陣列。`
+          **Parsing Rules for Occupancy:**
+          1. **"2大1小"** => adults: 2, children: 1
+          2. **"2+1"** => adults: 2, children: 1
+          3. **"2"** or **"2位"** or **"2人"** => adults: 2, children: 0
+          4. **"4大"** => adults: 4, children: 0
+          5. **"3+1(小)"** => adults: 3, children: 1
+          6. **"1泊2食 2位"** => adults: 2, children: 0
+          
+          **Other Fields:**
+          - **Room Code (房號)**: Look for '房號', '帳號', 'No.'. Convert chinese numerals if needed (e.g., '尊一' -> '尊1').
+          - **Guest Name**: Extract the main contact name.
+          - **Date**: Extract the check-in date (Format YYYY-MM-DD). If year is missing, assume current year.
+          - **Notes**: Extract dietary restrictions (素食, 不吃牛) or special requests.
+
+          Return a JSON Array.`
         }
       ],
       config: {
@@ -198,7 +214,8 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
     return [];
   } catch (error) {
     console.error("Image Analysis Failed:", error);
-    throw new Error("圖片分析失敗，請確認圖片清晰度");
+    // Throwing error allows the UI to catch it and show an alert
+    throw new Error("圖片分析失敗。請確認：1. 是否已在 geminiService.ts 填寫 HARDCODED_API_KEY。 2. 圖片是否清晰。");
   }
 };
 
