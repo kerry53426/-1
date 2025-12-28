@@ -109,6 +109,56 @@ const App: React.FC = () => {
   // Monitor changes
   useEffect(() => { triggerSave(); }, [rooms, bookingRecords, totalBlanketStock, triggerSave]);
 
+  // --- Automatic Check-out Logic (11:00 AM) ---
+  useEffect(() => {
+    const checkAutoCheckout = () => {
+      const now = new Date();
+      // Check if current time is past 11:00 AM
+      if (now.getHours() >= 11) {
+        const todayStr = now.toISOString().split('T')[0];
+        
+        setRooms(prevRooms => {
+          let hasChanges = false;
+          const nextRooms = prevRooms.map(room => {
+            // Logic: 
+            // 1. Room is Occupied
+            // 2. Checkout Date is Today (or in the past, implying overdue)
+            if (room.status === RoomStatus.OCCUPIED && room.checkOutDate && room.checkOutDate <= todayStr) {
+              hasChanges = true;
+              return {
+                ...room,
+                status: RoomStatus.AWAITING_STRIP,
+                // Clear guest info as they have checked out
+                currentGuestName: undefined,
+                currentGuestId: undefined,
+                checkInDate: undefined,
+                checkOutDate: undefined,
+                extraGuests: 0,
+                actualAdults: 0,
+                actualChildren: 0,
+                // Add system note
+                notes: (room.notes ? room.notes + '\n' : '') + '[系統] 11:00 自動退房'
+              };
+            }
+            return room;
+          });
+
+          if (hasChanges) {
+            console.log("Auto-checkout executed at 11:00 AM");
+            return nextRooms;
+          }
+          return prevRooms;
+        });
+      }
+    };
+
+    // Run check immediately on load, then every minute
+    checkAutoCheckout();
+    const interval = setInterval(checkAutoCheckout, 60000); 
+
+    return () => clearInterval(interval);
+  }, []); // Empty dependency array means this timer setup runs once on mount, but setRooms uses functional update so it's safe.
+
   // --- Room Handlers ---
   const handleUpdateRoomStatus = (roomId: string, newStatus: RoomStatus, guestName?: string, extraGuests?: number, actualAdults?: number, actualChildren?: number, checkOutDate?: string) => {
     setRooms(prev => prev.map(room => {

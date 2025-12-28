@@ -162,7 +162,7 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
           checkInDate: { type: Type.STRING, description: "入住日期 (Format: YYYY-MM-DD)" },
           adults: { type: Type.INTEGER, description: "大人人數 (Adults). STRICTLY PARSE NUMBERS. '2大1小' -> 2." },
           children: { type: Type.INTEGER, description: "小孩人數 (Children). STRICTLY PARSE NUMBERS. '2大1小' -> 1." },
-          notes: { type: Type.STRING, description: "備註 (e.g., '不吃牛', '加被子', '全素')" }
+          notes: { type: Type.STRING, description: "備註 (e.g., '不吃牛', '加被子', '全素', '2泊')" }
         },
         required: ["roomCode", "guestName", "checkInDate", "adults", "children"]
       }
@@ -181,22 +181,22 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
         {
           text: `You are a professional data entry specialist. Analyze this Glamping Booking Sheet image.
           
-          **CRITICAL TASK: NUMBER RECOGNITION (人數辨識)**
+          **CRITICAL TASK 1: NUMBER RECOGNITION (人數辨識)**
           You must correctly extract the number of Adults and Children from the columns (usually labeled '人數', '大人/小孩', or '備註').
+          - "2大1小" => adults: 2, children: 1
+          - "2+1" => adults: 2, children: 1
+          - "2" => adults: 2, children: 0
           
-          **Parsing Rules for Occupancy:**
-          1. **"2大1小"** => adults: 2, children: 1
-          2. **"2+1"** => adults: 2, children: 1
-          3. **"2"** or **"2位"** or **"2人"** => adults: 2, children: 0
-          4. **"4大"** => adults: 4, children: 0
-          5. **"3+1(小)"** => adults: 3, children: 1
-          6. **"1泊2食 2位"** => adults: 2, children: 0
+          **CRITICAL TASK 2: STAY DURATION DETECTION (續住/天數辨識)**
+          - Pay close attention to the 'Notes' (備註) or 'Days' (天數) column.
+          - If you see **"2泊"**, **"3天2夜"**, **"續住"**, **"連住"**, or any indication of a stay longer than 1 night, you MUST include this in the 'notes' field.
+          - Example Note output: "2泊, 不吃牛"
           
           **Other Fields:**
-          - **Room Code (房號)**: Look for '房號', '帳號', 'No.'. Convert chinese numerals if needed (e.g., '尊一' -> '尊1').
+          - **Room Code (房號)**: Look for '房號', '帳號', 'No.'. Convert chinese numerals if needed.
           - **Guest Name**: Extract the main contact name.
-          - **Date**: Extract the check-in date (Format YYYY-MM-DD). If year is missing, assume current year.
-          - **Notes**: Extract dietary restrictions (素食, 不吃牛) or special requests.
+          - **Date**: Extract the check-in date.
+          - **Notes**: Extract dietary restrictions AND stay duration hints.
 
           Return a JSON Array.`
         }
