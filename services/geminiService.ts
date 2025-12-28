@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Member, MembershipTier, AIAnalysisResult, DailyStats } from "../types";
 
@@ -200,5 +199,42 @@ export const analyzeOccupancyImage = async (base64Image: string): Promise<any[]>
   } catch (error) {
     console.error("Image Analysis Failed:", error);
     throw new Error("圖片分析失敗，請確認圖片清晰度");
+  }
+};
+
+/**
+ * Generates kitchen advice based on meal stats and dining list.
+ */
+export const generateKitchenAdvice = async (date: string, mealStats: any, diningList: any[]): Promise<string> => {
+  try {
+    const ai = getAI();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: `擔任豪華露營區的行政主廚。請根據以下數據生成今日廚房備料建議與注意事項。
+      
+      日期: ${date}
+      
+      餐點統計 (Meal Stats):
+      ${JSON.stringify(mealStats, null, 2)}
+      
+      用餐名單 (Guest List):
+      ${JSON.stringify(diningList, null, 2)}
+      
+      請提供給內場人員的簡報，包含：
+      1. 總餐量摘要 (早餐/晚餐)
+      2. 特殊飲食需求總整理 (過敏、素食細節)
+      3. 菜盤備料重點 (葷食/海鮮/素食 的 雙人/三人盤數量)
+      4. 針對個別客人的注意事項 (如：某房不吃蔥、某房慶生需蛋糕等)
+      
+      語氣專業、精簡、條列式。請用繁體中文。`,
+      config: {
+        systemInstruction: "You are an expert Executive Chef at a luxury glamping resort in Taiwan. Provide concise, operational kitchen advice."
+      }
+    });
+
+    return response.text || "目前無法產生建議。";
+  } catch (error) {
+    console.error("Gemini Kitchen Advice Failed:", error);
+    return "連線問題，無法產生 AI 建議，請直接參考統計數據。";
   }
 };

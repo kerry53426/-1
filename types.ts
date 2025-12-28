@@ -53,7 +53,8 @@ export interface DailyStats {
 export enum RoomStatus {
   VACANT = '空房',       // Clean and ready
   OCCUPIED = '入住中',   // Guest inside
-  DIRTY = '待清潔',      // Guest left, needs cleaning
+  AWAITING_STRIP = '待拉床', // Guest left, needs bed stripping
+  DIRTY = '待清潔',      // Bed stripped, needs cleaning
   MAINTENANCE = '維護中' // Broken/Renovation
 }
 
@@ -95,7 +96,10 @@ export interface BookingRecord {
   roomType: string;
   guestName: string;
   checkInDate: string;
+  checkOutDate?: string; // Optional: When they checked out
   extraGuests: number;
+  actualAdults?: number; // Optional: Exact adults count
+  actualChildren?: number; // Optional: Exact children count
   notes?: string;
 }
 
@@ -112,7 +116,7 @@ export interface InventoryLog {
 export interface InventoryItem {
   id: string;
   name: string;
-  category: '肉品' | '海鮮' | '蔬果' | '乾貨' | '酒水' | '消耗品';
+  category: string; // Changed to string to allow custom categories
   quantity: number;
   unit: string;
   safetyStock: number;

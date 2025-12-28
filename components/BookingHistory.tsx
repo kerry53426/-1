@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { BookingRecord } from '../types';
-import { Search, Calendar, Filter, User, MapPin, CalendarClock, Trash2 } from 'lucide-react';
+import { Search, Calendar, Filter, User, MapPin, CalendarClock, Trash2, ArrowRight } from 'lucide-react';
 
 interface BookingHistoryProps {
   records: BookingRecord[];
@@ -133,7 +133,7 @@ const BookingHistory: React.FC<BookingHistoryProps> = ({ records, onDeleteRecord
              <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead className="sticky top-0 bg-glamping-50 z-10 shadow-sm">
                    <tr className="border-b border-glamping-200 text-xs font-bold text-glamping-500 uppercase tracking-wider">
-                      <th className="p-4 font-serif">入住日期</th>
+                      <th className="p-4 font-serif">入住期間</th>
                       <th className="p-4 font-serif">房號 / 房型</th>
                       <th className="p-4 font-serif">入住貴賓</th>
                       <th className="p-4 font-serif">入住人數</th>
@@ -145,8 +145,16 @@ const BookingHistory: React.FC<BookingHistoryProps> = ({ records, onDeleteRecord
                    {filteredRecords.length > 0 ? (
                       filteredRecords.map((record) => (
                         <tr key={record.id} className="hover:bg-glamping-50 transition-colors group">
-                           <td className="p-4 font-mono text-glamping-800 text-sm">
-                              {record.checkInDate}
+                           <td className="p-4 text-sm text-glamping-800">
+                              <div className="flex items-center gap-1 font-mono">
+                                 <span>{record.checkInDate}</span>
+                                 {record.checkOutDate && (
+                                    <>
+                                       <ArrowRight size={12} className="text-glamping-400"/>
+                                       <span className="text-glamping-500">{record.checkOutDate}</span>
+                                    </>
+                                 )}
+                              </div>
                            </td>
                            <td className="p-4">
                               <div className="flex items-center gap-2">
@@ -161,7 +169,11 @@ const BookingHistory: React.FC<BookingHistoryProps> = ({ records, onDeleteRecord
                               </div>
                            </td>
                            <td className="p-4 text-sm text-glamping-600">
-                              標準 + {record.extraGuests} 加人
+                              {(record.actualAdults !== undefined && record.actualChildren !== undefined) ? (
+                                 <span className="font-bold">{record.actualAdults}大 {record.actualChildren}小</span>
+                              ) : (
+                                 <span>標準 + {record.extraGuests} 加人</span>
+                              )}
                            </td>
                            <td className="p-4 text-sm text-glamping-500 max-w-xs truncate">
                               {record.notes || '-'}

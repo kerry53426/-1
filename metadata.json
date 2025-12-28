@@ -1,5 +1,5 @@
 {
-  "name": "愛上喜翁 - 尊榮會員管家",
+  "name": "愛上喜翁 房務管理",
   "description": "專為愛上喜翁豪華露營設計的會員管理系統 (CRM)。結合 AI 智能分析會員喜好、飲食禁忌與歷史紀錄，提供極致的個人化服務體驗。",
   "requestFramePermissions": [
     "microphone"

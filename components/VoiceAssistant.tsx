@@ -1,408 +1,371 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Zap, Volume2, X } from 'lucide-react';
-import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from "@google/genai";
+import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, Blob } from "@google/genai";
+import { Mic, MicOff, Loader, X, Sparkles } from 'lucide-react';
 
 interface VoiceAssistantProps {
-  onNavigate: (view: 'dashboard' | 'members' | 'rooms' | 'kitchen') => void;
-  onRoomAction: (code: string, action: 'CHECKIN' | 'CHECKOUT' | 'CLEAN') => string; // Returns result string
-  onGetStats: () => string; // New prop for getting detailed stats
+  onNavigate: (view: any) => void; // Deprecated but kept for signature compatibility
+  onRoomAction: (code: string, action: 'CHECKIN' | 'CHECKOUT' | 'CLEAN') => string;
+  onGetStats: () => string;
 }
 
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onNavigate, onRoomAction, onGetStats }) => {
+// --- Audio Helper Functions ---
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function encode(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function createBlob(data: Float32Array): Blob {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    let s = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = s < 0 ? s * 32768 : s * 32767;
+  }
+  return {
+    data: encode(new Uint8Array(int16.buffer)),
+    mimeType: 'audio/pcm;rate=16000',
+  };
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
+// --- Tool Definitions ---
+
+const roomActionTool: FunctionDeclaration = {
+  name: 'roomAction',
+  description: 'Perform an action on a specific room.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      code: {
+        type: Type.STRING,
+        description: 'The room code (e.g., "101", "205", "VIP1").'
+      },
+      action: {
+        type: Type.STRING,
+        description: 'The action to perform. Options: "CHECKIN", "CHECKOUT", "CLEAN".'
+      }
+    },
+    required: ['code', 'action']
+  }
+};
+
+const getStatsTool: FunctionDeclaration = {
+  name: 'getStats',
+  description: 'Get current hotel statistics including occupancy, dirty rooms, and inventory.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  }
+};
+
+// --- Component ---
+
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onRoomAction, onGetStats }) => {
   const [isActive, setIsActive] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [status, setStatus] = useState<'IDLE' | 'CONNECTING' | 'LISTENING' | 'THINKING' | 'SPEAKING'>('IDLE');
-  const [volume, setVolume] = useState(0); // For visualization
-  
-  // Audio Refs
-  const inputContextRef = useRef<AudioContext | null>(null);
-  const outputContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const nextStartTimeRef = useRef<number>(0);
-  const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  
-  // Session Ref
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [volume, setVolume] = useState(0);
+
+  const propsRef = useRef({ onRoomAction, onGetStats });
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
-  const aiRef = useRef<GoogleGenAI | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const inputProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const inputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   useEffect(() => {
-    // Cleanup on unmount
-    return () => {
-      stopSession();
-    };
-  }, []);
+    propsRef.current = { onRoomAction, onGetStats };
+  }, [onRoomAction, onGetStats]);
 
-  // --- Logger Helper ---
-  const logVoiceCommand = (toolName: string, args: any, result: string) => {
+  const disconnect = () => {
+    if (sessionPromiseRef.current) {
+        sessionPromiseRef.current.then(session => {
+            try { session.close(); } catch(e) { console.error("Session close error", e); }
+        });
+        sessionPromiseRef.current = null;
+    }
+
+    if (inputProcessorRef.current) {
+        inputProcessorRef.current.disconnect();
+        inputProcessorRef.current = null;
+    }
+    if (inputSourceRef.current) {
+        inputSourceRef.current.disconnect();
+        inputSourceRef.current = null;
+    }
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+    }
+    if (inputAudioContextRef.current) {
+        inputAudioContextRef.current.close();
+        inputAudioContextRef.current = null;
+    }
+
+    sourcesRef.current.forEach(source => {
+        try { source.stop(); } catch(e) {}
+    });
+    sourcesRef.current.clear();
+    
+    if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+    }
+
+    setIsActive(false);
+    setIsConnecting(false);
+    setVolume(0);
+  };
+
+  const connect = async () => {
     try {
-      const logEntry = {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        tool: toolName,
-        args: args,
-        result: result
-      };
+      setIsConnecting(true);
       
-      const existingLogs = JSON.parse(localStorage.getItem('voice_command_logs') || '[]');
-      // Keep last 50 logs
-      const updatedLogs = [logEntry, ...existingLogs].slice(0, 50);
-      localStorage.setItem('voice_command_logs', JSON.stringify(updatedLogs));
-      console.log("[VoiceLog]", toolName, result);
-    } catch (e) {
-      console.error("Failed to log voice command", e);
-    }
-  };
-
-  // --- Audio Helpers ---
-  const createBlob = (data: Float32Array) => {
-    const l = data.length;
-    const int16 = new Int16Array(l);
-    for (let i = 0; i < l; i++) {
-      int16[i] = data[i] * 32768;
-    }
-    let binary = '';
-    const bytes = new Uint8Array(int16.buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const b64 = btoa(binary);
-    
-    return {
-      data: b64,
-      mimeType: 'audio/pcm;rate=16000',
-    };
-  };
-
-  const decodeAudioData = async (base64: string, ctx: AudioContext) => {
-    const binaryString = atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    const dataInt16 = new Int16Array(bytes.buffer);
-    const frameCount = dataInt16.length;
-    const buffer = ctx.createBuffer(1, frameCount, 24000);
-    const channelData = buffer.getChannelData(0);
-    
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i] / 32768.0;
-    }
-    return buffer;
-  };
-
-  // --- Tool Definitions ---
-  const tools: { functionDeclarations: FunctionDeclaration[] }[] = [{
-    functionDeclarations: [
-      {
-        name: "navigate",
-        description: "Switch the application view to a specific page.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            view: {
-              type: Type.STRING,
-              description: "The view to navigate to. Options: 'dashboard' (戰情室/首頁), 'rooms' (客房管理/房態), 'kitchen' (廚房/備餐), 'members' (會員/貴賓).",
-              enum: ['dashboard', 'rooms', 'kitchen', 'members']
-            }
-          },
-          required: ["view"]
-        }
-      },
-      {
-        name: "roomAction",
-        description: "Perform an action on a specific room code. Supports checking out, cleaning, or checking in.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            roomCode: {
-              type: Type.STRING,
-              description: "The room code (e.g., '201', '尊1', '10', '水2')."
-            },
-            action: {
-              type: Type.STRING,
-              description: "The action to perform. 'CLEAN' (掃完了/設為空房), 'CHECKOUT' (退房), 'CHECKIN' (入住).",
-              enum: ['CLEAN', 'CHECKOUT', 'CHECKIN']
-            }
-          },
-          required: ["roomCode", "action"]
-        }
-      },
-      {
-        name: "getHotelStats",
-        description: "Get current hotel statistics and detailed availability by room type.",
-        parameters: {
-            type: Type.OBJECT,
-            properties: {},
-        }
+      let apiKey = '';
+      if (typeof process !== 'undefined' && process.env) {
+        apiKey = process.env.API_KEY || '';
       }
-    ]
-  }];
+      if (!apiKey) throw new Error("API Key not found");
 
-  // --- Main Logic ---
+      const ai = new GoogleGenAI({ apiKey });
 
-  const startSession = async () => {
-    try {
-      setStatus('CONNECTING');
-      setIsActive(true);
-
-      // 1. Initialize Audio Contexts
-      inputContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      outputContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const inputCtx = new AudioContextClass({ sampleRate: 16000 });
+      const outputCtx = new AudioContextClass({ sampleRate: 24000 });
       
-      // 2. Get Mic Stream
+      inputAudioContextRef.current = inputCtx;
+      audioContextRef.current = outputCtx;
+      nextStartTimeRef.current = outputCtx.currentTime;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // 3. Connect to Gemini Live
-      let apiKey = '';
-      try {
-        if (typeof process !== 'undefined' && process.env) {
-          apiKey = process.env.API_KEY || '';
-        }
-      } catch(e) { console.warn("API Key missing"); }
+      const outputNode = outputCtx.createGain();
+      outputNode.connect(outputCtx.destination);
 
-      aiRef.current = new GoogleGenAI({ apiKey });
-      
-      // Prompt Engineering for better room recognition and speed
-      const SYSTEM_INSTRUCTION = `
-      你是愛上喜翁豪華露營的「極速語音管家」。你的任務是快速執行操作，不要多話。
-
-      **重要：房號對照表 (請嚴格遵守)**
-      1. **尊爵帳 (VIP)**: 聽到「尊一」、「尊1」、「VIP 1」，參數 roomCode 一律為 "尊1"。聽到 "尊2"->"尊2", "尊3"->"尊3"。
-      2. **水屋 (Water House)**: 聽到「水一」、「水1」，參數 roomCode 一律為 "水1"。聽到 "水2"->"水2", "水3"->"水3", "水4"->"水4"。
-      3. **雙人帳 (Double)**: 聽到「雙人帳5號」、「5號」、「五號」，參數 roomCode 為 "5"。範圍 1~11。
-      4. **皇宮帳 (Palace)**: 聽到「皇宮12」、「12號」，參數 roomCode 為 "12"。範圍 12~16。
-      5. **檜木房 (Cypress)**: 聽到「201」、「二零一」，參數 roomCode 為 "201"。範圍 201~204。
-
-      **操作規則**：
-      1. **速度第一**：聽到指令後，優先呼叫 Tool。
-      2. **簡短回應**：執行成功後，只需回覆「好的，尊1已退房」、「已設為空房」、「已切換」等，不要超過 10 個字。
-      3. **模糊指令**：
-         - 「尊一髒了」、「尊一退房」 -> 對 "尊1" 執行 CHECKOUT (退房/設為待清潔)。
-         - 「尊一掃完了」、「尊一好了」 -> 對 "尊1" 執行 CLEAN (設為空房)。
-         - 「201 客人來了」 -> 對 "201" 執行 CHECKIN。
-      4. **狀態查詢**：
-         - 「還有空房嗎？」、「水屋剩幾間？」-> 呼叫 getHotelStats。
-         - 根據回傳的 JSON 回答重點數據即可。
-
-      請使用繁體中文。
-      `;
-
-      sessionPromiseRef.current = aiRef.current.live.connect({
+      const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
           responseModalities: [Modality.AUDIO],
-          tools: tools,
-          systemInstruction: SYSTEM_INSTRUCTION,
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
+          },
+          systemInstruction: 'You are "翁翁", a professional hotel butler at "Ai Shang Xi Weng". You help manage room status. Speak in Traditional Chinese (Taiwan). Be concise.',
+          tools: [{ functionDeclarations: [roomActionTool, getStatsTool] }],
         },
         callbacks: {
           onopen: () => {
             console.log("Gemini Live Connected");
-            setStatus('LISTENING');
+            setIsConnecting(false);
+            setIsActive(true);
+
+            const source = inputCtx.createMediaStreamSource(stream);
+            inputSourceRef.current = source;
             
-            // Start Audio Stream
-            if (!inputContextRef.current || !streamRef.current) return;
-            
-            sourceRef.current = inputContextRef.current.createMediaStreamSource(streamRef.current);
-            processorRef.current = inputContextRef.current.createScriptProcessor(4096, 1, 1);
-            
-            processorRef.current.onaudioprocess = (e) => {
+            const processor = inputCtx.createScriptProcessor(4096, 1, 1);
+            inputProcessorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
-              
-              // Simple volume meter
               let sum = 0;
-              for(let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+              for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
               const rms = Math.sqrt(sum / inputData.length);
-              setVolume(Math.min(100, rms * 1000)); // Scale for UI
+              setVolume(Math.min(100, Math.round(rms * 100 * 5))); 
 
               const pcmBlob = createBlob(inputData);
-              sessionPromiseRef.current?.then(session => {
-                session.sendRealtimeInput({ media: pcmBlob });
+              sessionPromise.then(session => {
+                  session.sendRealtimeInput({ media: pcmBlob });
               });
             };
 
-            sourceRef.current.connect(processorRef.current);
-            processorRef.current.connect(inputContextRef.current.destination);
+            source.connect(processor);
+            processor.connect(inputCtx.destination);
           },
-          onmessage: async (msg: LiveServerMessage) => {
-            // Handle Audio Output
-            const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (audioData && outputContextRef.current) {
-              setStatus('SPEAKING');
-              setIsSpeaking(true);
-              const ctx = outputContextRef.current;
-              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-              
-              const buffer = await decodeAudioData(audioData, ctx);
-              const source = ctx.createBufferSource();
-              source.buffer = buffer;
-              source.connect(ctx.destination);
-              
-              source.onended = () => {
-                audioSourcesRef.current.delete(source);
-                if (audioSourcesRef.current.size === 0) {
-                  setIsSpeaking(false);
-                  setStatus('LISTENING');
-                }
-              };
-              
-              source.start(nextStartTimeRef.current);
-              nextStartTimeRef.current += buffer.duration;
-              audioSourcesRef.current.add(source);
+          onmessage: async (message: LiveServerMessage) => {
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (base64Audio) {
+               try {
+                   const audioBuffer = await decodeAudioData(
+                     decode(base64Audio),
+                     outputCtx,
+                     24000,
+                     1
+                   );
+                   
+                   const source = outputCtx.createBufferSource();
+                   source.buffer = audioBuffer;
+                   source.connect(outputNode);
+                   
+                   const now = outputCtx.currentTime;
+                   const startAt = Math.max(now, nextStartTimeRef.current);
+                   source.start(startAt);
+                   
+                   nextStartTimeRef.current = startAt + audioBuffer.duration;
+                   
+                   sourcesRef.current.add(source);
+                   source.onended = () => sourcesRef.current.delete(source);
+
+               } catch (err) {
+                   console.error("Audio decode error", err);
+               }
             }
 
-            // Handle Tool Calls
-            if (msg.toolCall) {
-              setStatus('THINKING');
-              for (const fc of msg.toolCall.functionCalls) {
-                console.log("Tool Call:", fc.name, fc.args);
-                let result = "OK";
-                
-                try {
-                  if (fc.name === 'navigate') {
-                    const view = (fc.args as any).view;
-                    onNavigate(view);
-                    result = `已切換至 ${view}`;
-                  } else if (fc.name === 'roomAction') {
-                    const { roomCode, action } = fc.args as any;
-                    const res = onRoomAction(roomCode, action);
-                    result = res;
-                  } else if (fc.name === 'getHotelStats') {
-                     // Use the new prop to get stats
-                     result = onGetStats(); 
-                  }
-                } catch (e) {
-                  result = "操作失敗";
-                }
+            if (message.serverContent?.interrupted) {
+                sourcesRef.current.forEach(s => s.stop());
+                sourcesRef.current.clear();
+                nextStartTimeRef.current = outputCtx.currentTime;
+            }
 
-                // Log the command and result to localStorage
-                logVoiceCommand(fc.name, fc.args, result);
-
-                sessionPromiseRef.current?.then(session => {
-                  session.sendToolResponse({
-                    functionResponses: {
-                      id: fc.id,
-                      name: fc.name,
-                      response: { result: result }
+            if (message.toolCall) {
+                for (const fc of message.toolCall.functionCalls) {
+                    console.log("Tool Call:", fc.name, fc.args);
+                    let result = "OK";
+                    
+                    try {
+                        if (fc.name === 'roomAction') {
+                            const code = (fc.args as any).code;
+                            const action = (fc.args as any).action;
+                            result = propsRef.current.onRoomAction(code, action);
+                        } else if (fc.name === 'getStats') {
+                            result = propsRef.current.onGetStats();
+                        }
+                    } catch (err) {
+                        result = "執行失敗";
+                        console.error(err);
                     }
-                  });
-                });
-              }
+
+                    sessionPromise.then(session => {
+                        session.sendToolResponse({
+                            functionResponses: {
+                                id: fc.id,
+                                name: fc.name,
+                                response: { result: { result } } 
+                            }
+                        });
+                    });
+                }
             }
           },
           onclose: () => {
-            console.log("Connection Closed");
-            stopSession();
+              console.log("Session Closed");
+              disconnect();
           },
-          onerror: (err) => {
-            console.error("Gemini Error:", err);
-            stopSession();
+          onerror: (e) => {
+              console.error("Session Error", e);
+              disconnect();
           }
         }
       });
+      
+      sessionPromiseRef.current = sessionPromise;
 
-    } catch (e) {
-      console.error("Failed to start session:", e);
-      stopSession();
+    } catch (error) {
+      console.error("Connection Failed", error);
+      setIsConnecting(false);
+      setIsActive(false);
+      alert("無法連接語音助理");
     }
   };
 
-  const stopSession = () => {
-    setStatus('IDLE');
-    setIsActive(false);
-    setIsSpeaking(false);
-    setVolume(0);
-
-    // Stop Audio
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    processorRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    inputContextRef.current?.close();
-    outputContextRef.current?.close();
-    
-    // Clear refs
-    streamRef.current = null;
-    processorRef.current = null;
-    sourceRef.current = null;
-    inputContextRef.current = null;
-    outputContextRef.current = null;
-    nextStartTimeRef.current = 0;
-    
-    // Close Session
-    sessionPromiseRef.current?.then(s => s.close());
-    sessionPromiseRef.current = null;
-  };
-
-  const toggleSession = () => {
-    if (isActive) {
-      stopSession();
+  const toggleVoice = () => {
+    if (isActive || isConnecting) {
+      disconnect();
     } else {
-      startSession();
+      connect();
     }
   };
-
-  // --- Render ---
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-      {/* Status Bubble */}
-      {isActive && (
-        <div className="bg-glamping-900 text-white px-4 py-2 rounded-2xl shadow-xl border border-luxury-gold/50 flex items-center gap-3 animate-fade-in mb-2 min-w-[200px]">
-           <div className="relative">
-             <div className={`w-3 h-3 rounded-full ${status === 'SPEAKING' ? 'bg-luxury-gold' : 'bg-emerald-500'}`}></div>
-             {status === 'LISTENING' && <div className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75"></div>}
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
+      {(isActive || isConnecting) && (
+        <div className="bg-glamping-900/90 backdrop-blur-md text-white p-4 rounded-2xl shadow-2xl border border-luxury-gold/30 animate-scale-in w-64">
+           <div className="flex justify-between items-center mb-3">
+              <h3 className="font-serif font-bold text-luxury-gold flex items-center gap-2">
+                 <Sparkles size={16} /> AI 語音管家
+              </h3>
+              <button onClick={disconnect} className="hover:text-red-400 transition">
+                 <X size={16} />
+              </button>
            </div>
            
-           <div className="flex-1">
-             <div className="text-xs font-bold text-glamping-300 uppercase tracking-wider">
-                {status === 'CONNECTING' && '連線中...'}
-                {status === 'LISTENING' && '聆聽中...'}
-                {status === 'THINKING' && '處理中...'}
-                {status === 'SPEAKING' && '管家說話中'}
-             </div>
-             {/* Visualizer Bar */}
-             {status === 'LISTENING' && (
-                <div className="flex gap-0.5 mt-1 h-3 items-end">
-                   {[...Array(5)].map((_, i) => (
-                      <div 
-                        key={i} 
-                        className="w-1 bg-luxury-gold rounded-full transition-all duration-75"
-                        style={{ height: `${Math.max(20, Math.random() * volume)}%` }}
-                      ></div>
-                   ))}
-                </div>
-             )}
+           <div className="flex flex-col items-center justify-center py-2 gap-3">
+              {isConnecting ? (
+                  <div className="flex flex-col items-center gap-2 text-glamping-300">
+                      <Loader size={24} className="animate-spin text-luxury-gold" />
+                      <span className="text-xs">連線中...</span>
+                  </div>
+              ) : (
+                  <>
+                    <div className="h-12 flex items-end gap-1 justify-center w-full">
+                        {[...Array(5)].map((_, i) => (
+                           <div 
+                             key={i} 
+                             className="w-2 bg-luxury-gold rounded-t-full transition-all duration-75"
+                             style={{ 
+                               height: `${Math.max(15, Math.random() * volume * (i % 2 === 0 ? 1.5 : 0.8) + 10)}%`,
+                               opacity: 0.8 + (volume / 100) * 0.2
+                             }}
+                           ></div>
+                        ))}
+                    </div>
+                    <p className="text-xs text-glamping-300 font-medium">
+                       {volume > 10 ? "正在聆聽..." : "請說出指令..."}
+                    </p>
+                  </>
+              )}
            </div>
            
-           <button onClick={stopSession} className="text-glamping-400 hover:text-white">
-              <X size={16} />
-           </button>
+           <div className="mt-3 pt-3 border-t border-white/10 text-[10px] text-glamping-400 text-center">
+              支援: "201 入住"、"營運狀況"、"全部退房"
+           </div>
         </div>
       )}
 
-      {/* Main FAB */}
       <button 
-        onClick={toggleSession}
-        className={`w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 relative group overflow-hidden ${
+        onClick={toggleVoice}
+        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-300 transform hover:scale-105 active:scale-95 ${
           isActive 
-          ? 'bg-glamping-900 border-2 border-luxury-gold text-luxury-gold scale-110' 
-          : 'bg-luxury-gold text-white hover:bg-yellow-600 hover:scale-105'
+            ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
+            : 'bg-luxury-gold hover:bg-yellow-600 text-white'
         }`}
       >
-        {/* Pulse effect when inactive but hovering */}
-        {!isActive && <div className="absolute inset-0 bg-white/20 rounded-full animate-ping opacity-0 group-hover:opacity-100 duration-1000"></div>}
-        
-        {isActive ? (
-           status === 'SPEAKING' ? <Volume2 size={28} className="animate-pulse" /> : <Mic size={28} />
-        ) : (
-           <Mic size={28} />
-        )}
+        {isActive ? <MicOff size={24} /> : <Mic size={24} />}
       </button>
     </div>
   );

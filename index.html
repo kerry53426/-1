@@ -16,7 +16,7 @@
           extend: {
             colors: {
               glamping: {
-                50: '#f7f7f5', // Stone/Paper
+                50: '#f7f7f5', // Stone/Paper (Legacy)
                 100: '#e8e8e3',
                 200: '#d3d3cb',
                 300: '#b4b4a6',
@@ -29,7 +29,20 @@
               },
               luxury: {
                 gold: '#C5A059',
-                accent: '#9B2C2C' // Muted Red for alerts
+                accent: '#9B2C2C' // Muted Red
+              },
+              // New Glamping Palette
+              forest: {
+                800: '#234233', // Deep Pine
+                900: '#162e23', // Dark Jungle
+              },
+              warm: {
+                50: '#fdfbf7', // Canvas / Cream
+                100: '#f5f0e6',
+                200: '#e6e0d3',
+              },
+              wood: {
+                800: '#5D4037',
               }
             },
             fontFamily: {
@@ -42,8 +55,26 @@
     </script>
     <style>
       body {
-        background-color: #f7f7f5;
+        background-color: #fdfbf7;
         color: #3f3f36;
+        /* Subtle noise texture for canvas feel */
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+      }
+      /* Custom scrollbar for table areas */
+      .custom-scrollbar::-webkit-scrollbar {
+        height: 8px;
+        width: 8px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f5f0e6; 
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #d3d3cb; 
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #C5A059; 
       }
     </style>
   <script type="importmap">
